@@ -313,5 +313,220 @@ ref(12)  相当于  reactive({value:12})
 那有人会想：在什么情况下用递归监听，什么情况下用非递归监听呢？
 其实只要记住，非递归监听是为了解决监听数据量大的问题而出现的，所以只有当数据量非常大时，我们才考虑用`shallowRef`和`shallowReactive`，一般情况下都使用`ref`和`reactive`
 
+## toRef函数和toRefs函数
 
+我们知道`ref`可以用于创建一个响应式数据，而`toRef`也可以创建一个响应式数据，那他们之间有什么区别呢？
+
+事实上，如果利用`ref`函数将某个对象中的属性变成响应式数据，修改响应式数据是不会影响到原始数据。
+```js
+import {ref} from 'vue';
+export default {
+  name:'App'
+  setup(){
+    let obj = {name : 'alice', age : 12};
+    let newObj= ref(obj.name);
+    function change(){
+      newObj.value = 'Tom';
+      console.log(obj,newObj)
+    }
+    return {newObj,change}
+  }
+}
+```
+
+上述代码，当`change`执行的时候，响应式数据发生改变，而原始数据`obj`并不会改变。
+
+>原因在于，`ref`的本质是拷贝，与原始数据没有引用关系
+
+需要注意ref(obj.name)相当于ref('alice')相当于reactive({value:'alice'}) 所以在修改数据时，是修改newObj.value=xxx
+
+而如果使用`toRef`将某个对象中的属性变成响应式数据，修改响应式数据是会影响到原始数据的。但是需要注意，如果修改通过`toRef`创建的响应式数据，并不会触发`UI`界面的更新。
+
+>所以，toRef的本质是引用，与原始数据有关联
+```js
+import {toRef} from 'vue';
+export default {
+  name:'App'
+  setup(){
+    let obj = {name : 'alice', age : 12};
+    let newObj= toRef(obj, 'name');
+    function change(){
+      newObj.value = 'Tom';
+      console.log(obj,newObj)
+    }
+    return {newObj,change}
+  }
+}
+```
+>上述代码，当change执行的时候，响应式数据发生改变，原始数据obj并不会改变，但是UI界面不会更新
+
+_小结：_
+`ref和toRef的区别`
+
+`(1). ref本质是拷贝，修改响应式数据不会影响原始数据；toRef的本质是引用关系，修改响应式数据会影响原始数据`
+
+`(2). ref数据发生改变，界面会自动更新；toRef当数据发生改变是，界面不会自动更新`
+
+`(3). toRef传参与ref不同；toRef接收两个参数，第一个参数是哪个对象，第二个参数是对象的哪个属性`
+
+所以如果想让响应式数据和以前的数据关联起来，并且想在更新响应式数据的时候不更新`UI`，那么就使用`toRef`
+
+有的时候，我们希望将对象的多个属性都变成响应式数据，并且要求响应式数据和原始数据关联，并且更新响应式数据的时候不更新界面，就可以使用`toRefs`，用于批量设置多个数据为响应式数据。(toRef一次仅能设置一个数据)
+
+`toRefs`接收一个对象作为参数，它会遍历对象身上的所有属性，然后挨个调用`toRef`执行
+
+_例如_
+
+```js
+import {toRefs} from 'vue';
+export default {
+  name:'App'
+  setup(){
+    let obj = {name : 'alice', age : 12};
+    let newObj= toRefs(obj);
+    function change(){
+      newObj.name.value = 'Tom';
+      newObj.age.value = 18;
+      console.log(obj,newObj)
+    }
+    return {newObj,change}
+  }
+}
+```
+
+## 如何通过ref属性获取元素
+在`vue2.x`中，可以通过给元素添加`ref='xxx`'属性，然后在代码中通过this.$refs.xxx获取到对应的元素
+
+然而在`vue3`中时没有`$refs`这个东西的，因此`vue3`中通过`ref`属性获取元素就不能按照`vue2`的方式来获取
+
+`vue3`需要借助生命周期方法，原因很简单，在`setup`执行时，`template`中的元素还没挂载到页面上，所以必须在`mounted`之后才能获取到元素。
+
+```js
+<template>
+  <div ref='box'>I am DIV</div>
+</template>
+<script>
+import {ref,onMounted}
+export default{
+  setup(){
+    let box = ref(null);
+    onMounted(()=>{
+      console.log(box.value)
+    });
+    return {box}
+  }
+}
+</script>
+```
+
+如上代码，`vue3`中，所有生命周期方法都抽离出去了，需要用时直接`import` 。这里导入了一个`onMounted`
+
+当界面挂载出来的时候，就会自动执行`onMounted`的回调函数，里头就可以获取到dom元素
+
+_小结_
+
+1. 在compositionAPI中如何使用生命周期函数？
+
+`需要用到哪个生命周期函数，就将对应函数的import进来，接着在setup中调用即可`
+
+2. vue3如何通过ref属性获取界面上的元素?
+
+`在template中的写法跟vue2一样，给元素添加个ref='xxx'`
+
+`在setup中，先创建一个响应式数据，并且要把响应式数据暴露出去`
+
+`当元素被创建出来的适合，就会给对应的响应数据赋值`
+
+`当响应式数据被赋值之后，就可以利用生命周期方法，在生命周期方法中获取对应的响应式数据，即DOM元素`
+
+## Vue3中全局API改为应用程序实例调用
+`vue3`中存在一些具有破坏性的变更，比如`Global API`改为应用程序实例调用
+`Vue2`中很多全局`API`会改变`vue`的行为，全局的`API`会导致一些问题：
+
+1. `Vue2`没有`app`的概念，`new Vue()`得到的根实例作为`app`，这样所有创建的根实例`app`都是共享相同的全局配置，这在测试时会污染其他测试用例，导致测试困难
+2. 全局配置也导致没有办法在单页面创建不同全局配置的多个`app`实例
+
+所以，`Vue3`使用`createApp`函数返回应用程序实例`app`，并由这个`app`实例暴露一系列的全局`API`
+比如，`Vue2`中`Vue.component`变更为如下形式
+
+```js
+import { createApp, h } from 'vue'
+import App from './App.vue'
+import './index.css'
+
+const app = createApp(App)
+    .component('comp', { render: () => h('div', 'i am comp!!!') })
+    .mount('#app')
+```
+可以看到，`Vue2`中通过`Vue`的构造函数调用`component`创建全局组件，现在变成有应用实例`app`调用的形式
+类似的变更(`Vue.component`变更为`app.component`)还有：
+
+`1. Vue.directive变更为app.directive`
+
+`2. Vue.mixin变更为app.mixin`
+
+`3. Vue.use变更为app.use`
+
+`4. Vue.config变更为app.config`
+
+`5. Vue.config.ignoredElements变更为app.config.ignoredElements`
+
+注意：`Vue.config.productionTip`和`Vue.filter`在`Vue3`中被移除
+
+## Vue3中生命周期函数的变化
+我们知道，在每个组件在被创建时，要经过一系列的初始化过程，比如，需要设置数据监听、编译模板、实例挂载并在数据变化时触发`DOM`更新等。
+在`Vue2`中提供了生命周期钩子函数，如 `beforeCreate` 、`created` 、`beforeMount` 、`mounted` 、`beforeUpdate`、`updated`、`beforeDestory`、`destoryed`等，用于在组件不同阶段执行一些我们想要的执行的操作
+到了`Vue3`，有所变化
+
+`1. beforeCreate ---->setup`
+
+`2. created  ---->setup`
+
+`3. beforeMount  ---->onBeforeMount`
+
+`4. mounted  ---->onMounted`
+
+`5. beforeUpdate ---->onBeforeUpdate`
+
+`6. updated ---->onUpdated`
+
+`7. beforeDestory ---->onBeforeUnmount`
+
+`8. destoryed ---->onUnmounted`
+
+可以看到，`setup` 函数代替了` beforeCreate` 和`created` 两个生命周期函数，因此我们认为`setup`的执行时间在`beforeCreate` 和` created` 之间
+
+为了更好的`Tree-shaking`，`Vue3`的生命周期函数都是从 vue 中导入，再进行直接调用
+
+```js
+//从 vue 中引入 多个生命周期函数
+import {onBeforeMount, onMounted, onBeforeUpdate, onUpdated, 
+  onBeforeUnmount, unMounted} from 'vue'
+export default {
+  name: 'App',
+  setup() {
+    onBeforeMount(() => {
+      // 在挂载前执行
+    })
+    onMounted(() => {
+      // 在挂载后执行
+    })
+    onBeforeUpdate(() => {
+      // 在更新前前执行
+    })
+    onUpdated(() => {
+      // 在更新后执行
+    })
+    onBeforeUnmount(() => {
+      // 在组件销毁前执行
+    })
+    unMounted(() => {
+      // 在组件销毁后执行
+    })
+    return {}
+  }
+  
+}
+```
+以上就个人的一些学习笔记，不一定都正确！
 
